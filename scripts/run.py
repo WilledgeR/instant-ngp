@@ -52,6 +52,8 @@ def parse_args():
 	parser.add_argument("--gui", action="store_true", help="Run the testbed GUI interactively.")
 	parser.add_argument("--train", action="store_true", help="If the GUI is enabled, controls whether training starts immediately.")
 	parser.add_argument("--n_steps", type=int, default=-1, help="Number of steps to train for before quitting.")
+	parser.add_argument("--shot_each", type=int, default=-1)
+	parser.add_argument("--save_each", type=int, default=-1)
 
 	parser.add_argument("--sharpen", default=0, help="Set amount of sharpening applied to NeRF training images.")
 
@@ -169,6 +171,9 @@ if __name__ == "__main__":
 	n_steps = args.n_steps
 	if n_steps < 0:
 		n_steps = 100000
+	last_step_save = 0
+	last_step_shot = 0
+	current_step = 0
 
 	if n_steps > 0:
 		with tqdm(desc="Training", total=n_steps, unit="step") as t:
@@ -188,12 +193,24 @@ if __name__ == "__main__":
 					t.reset()
 
 				t.update(testbed.training_step - old_training_step)
+				current_step += testbed.training_step - old_training_step
 				t.set_postfix(loss=testbed.loss)
 				old_training_step = testbed.training_step
 
-	if args.save_snapshot:
-		print("Saving snapshot ", args.save_snapshot)
-		testbed.save_snapshot(args.save_snapshot, False)
+				if args.save_snapshot and (current_step - last_step_save) // args.save_each:
+					last_step_save = current_step
+					print("Saving snapshot ", args.save_snapshot.format(step=current_step))
+					testbed.save_snapshot(args.save_snapshot.format(step=current_step), False)
+
+				if args.width and (current_step - last_step_shot) // args.shot_each:
+					last_step_shot = current_step
+					if args.screenshot_dir:
+						outname = os.path.join(args.screenshot_dir, args.scene + "_" + network_stem)
+						print(f"Rendering {outname}.{current_step}.png")
+						image = testbed.render(args.width, args.height, args.screenshot_spp, True)
+						if os.path.dirname(outname) != "":
+							os.makedirs(os.path.dirname(outname), exist_ok=True)
+						write_image(outname + f".{current_step}.png", image)
 
 	if args.test_transforms:
 		print("Evaluating test transforms from ", args.test_transforms)
@@ -310,13 +327,6 @@ if __name__ == "__main__":
 				image = testbed.render(args.width or int(ref_transforms["w"]), args.height or int(ref_transforms["h"]), args.screenshot_spp, True)
 				os.makedirs(os.path.dirname(outname), exist_ok=True)
 				write_image(outname, image)
-		elif args.screenshot_dir:
-			outname = os.path.join(args.screenshot_dir, args.scene + "_" + network_stem)
-			print(f"Rendering {outname}.png")
-			image = testbed.render(args.width, args.height, args.screenshot_spp, True)
-			if os.path.dirname(outname) != "":
-				os.makedirs(os.path.dirname(outname), exist_ok=True)
-			write_image(outname + ".png", image)
 
 
 
